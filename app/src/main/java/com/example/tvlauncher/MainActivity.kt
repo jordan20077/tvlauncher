@@ -53,23 +53,32 @@ val FAVORITES = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pm = packageManager
-        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        val all = pm.queryIntentActivities(main, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .map { ri ->
-                val p = ri.activityInfo.packageName
-                val d = ri.activityInfo.loadBanner(pm) ?: ri.loadIcon(pm)
-                AppItem(
-                    p, ri.loadLabel(pm).toString(),
-                    Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                        .setClassName(p, ri.activityInfo.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    d.toBitmap()
-                )
-            }
-        val feat = FAVORITES.mapNotNull { f -> all.firstOrNull { it.pkg == f } }
-        val rest = all.filter { it !in feat }.sortedBy { it.label.lowercase() }
-        setContent { Home(feat, rest) { startActivity(it.intent) } }
+        try {
+            val pm = packageManager
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+            val all = pm.queryIntentActivities(main, 0)
+                .filter { it.activityInfo.packageName != packageName }
+                .distinctBy { it.activityInfo.packageName }
+                .mapNotNull { ri ->
+                    runCatching {
+                        val p = ri.activityInfo.packageName
+                        val d = ri.activityInfo.loadBanner(pm) ?: ri.loadIcon(pm)
+                        val w = if (d.intrinsicWidth > 0) minOf(d.intrinsicWidth, 512) else 256
+                        val h = if (d.intrinsicHeight > 0) minOf(d.intrinsicHeight, 512) else 144
+                        AppItem(
+                            p, ri.loadLabel(pm).toString(),
+                            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                                .setClassName(p, ri.activityInfo.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            d.toBitmap(w, h)
+                        )
+                    }.getOrNull()
+                }
+            val feat = FAVORITES.mapNotNull { f -> all.firstOrNull { it.pkg == f } }
+            val rest = all.filter { it !in feat }.sortedBy { it.label.lowercase() }
+            setContent { Home(feat, rest) { startActivity(it.intent) } }
+        } catch (e: Throwable) {
+            setContent { Label("Error: $e", 20.sp, FontWeight.Normal, 1f, Modifier.padding(48.dp)) }
+        }
     }
 }
 
